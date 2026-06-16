@@ -134,12 +134,51 @@ class MetricOut(BaseModel):
     owner: str | None
     status: str
     version: str
+    tag_count: int = 0
+    latest_tag: str | None = None
+    latest_digest: str | None = None
+    updated_at: datetime | None = None
     specs: list[MetricSpecOut] = Field(default_factory=list)
 
 
-class ApproveMetricIn(BaseModel):
-    approved_by: str
-    spec_id: str | None = None
+class MetricTagOut(BaseModel):
+    id: str
+    tag: str
+    digest: str
+    digest_short: str
+    published_by: str | None
+    published_at: datetime
+    status: str
+
+
+class MetricTagDetailOut(MetricTagOut):
+    manifest: dict
+
+
+class PublishTagIn(BaseModel):
+    tag: str
+    published_by: str = "Investment Operations"
+    spec: MetricSpecIn | None = None
+
+
+class MetricRunIn(BaseModel):
+    dataset_id: str
+    nav_dataset_id: str | None = None
+    column_mapping: dict[str, str] | None = None
+    tag: str | None = None
+
+
+class MetricRunOut(BaseModel):
+    id: str
+    metric_id: str
+    dataset_id: str
+    status: str
+    transformation_plan_used: list | None
+    audit_log: dict | None
+    warnings: list | None
+    errors: list | None
+    started_at: datetime
+    finished_at: datetime | None
 
 
 class FunctionOut(BaseModel):
@@ -163,23 +202,9 @@ class DatasetOut(BaseModel):
     uploaded_at: datetime
 
 
-class MetricRunIn(BaseModel):
-    dataset_id: str
-    nav_dataset_id: str | None = None
-    column_mapping: dict[str, str] | None = None
-
-
-class MetricRunOut(BaseModel):
-    id: str
-    metric_id: str
-    dataset_id: str
-    status: str
-    transformation_plan_used: list | None
-    audit_log: dict | None
-    warnings: list | None
-    errors: list | None
-    started_at: datetime
-    finished_at: datetime | None
+class ApproveMetricIn(BaseModel):
+    approved_by: str
+    spec_id: str | None = None
 
 
 class SearchResult(BaseModel):

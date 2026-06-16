@@ -37,5 +37,9 @@ class Settings(BaseSettings):
     integration_webhook_url: str = ""
     integration_webhook_secret: str = ""
 
+    # Optional Margin Catalog governance webhook (same envelope as integration hub).
+    governance_webhook_url: str = ""
+    governance_webhook_secret: str = ""
+
 
 settings = Settings()

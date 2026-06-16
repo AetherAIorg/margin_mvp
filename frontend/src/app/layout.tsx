@@ -1,9 +1,10 @@
 import "./globals.css";
+import { RegistryShell } from "@/components/RegistryShell";
 import { Sidebar } from "@/components/Sidebar";
 
 export const metadata = {
-  title: "MetricGraph",
-  description: "Glean for financial metrics",
+  title: "Margin Registry",
+  description: "Docker Hub-style registry for investment metrics",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -12,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <div className="app-shell">
           <Sidebar />
-          <main className="main">{children}</main>
+          <RegistryShell>{children}</RegistryShell>
         </div>
       </body>
     </html>

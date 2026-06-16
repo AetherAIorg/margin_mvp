@@ -6,12 +6,11 @@ from sqlalchemy import select
 
 from app.database import SessionLocal, init_db
 from app.execution.finance_functions import FINANCIAL_FUNCTIONS, TRANSFORMATIONS
-from app.models import Function, FunctionImplementation, Metric, MetricSpec
+from app.models import Artifact, Dataset, Function, FunctionImplementation, Metric, MetricSpec, ParseJob
+from app.registry import build_manifest_from_metric, publish_tag
+from app.parsers.csv_parser import sniff_csv_columns
 from app.queue import enqueue_parse
 from app.storage import upload_bytes
-
-from app.models import Artifact, Dataset, ParseJob
-from app.parsers.csv_parser import sniff_csv_columns
 
 
 def seed_functions(db) -> None:
@@ -88,6 +87,20 @@ def seed_canonical_metrics(db) -> None:
             approved_at=datetime.now(timezone.utc),
         )
     )
+    db.flush()
+    spec = db.scalar(select(MetricSpec).where(MetricSpec.metric_id == metric.id))
+    manifest_v1 = build_manifest_from_metric(metric, spec)
+    publish_tag(db, metric, "1.0", manifest_v1, "Investment Operations")
+    manifest_v11 = dict(manifest_v1)
+    manifest_v11["transformation_plan"] = [
+        "normalize_cashflow_signs",
+        "apply_fee_adjustments",
+        "add_terminal_nav",
+        "validate_nav_date",
+        "compute_xirr",
+    ]
+    publish_tag(db, metric, "1.1", manifest_v11, "Investment Operations")
+    publish_tag(db, metric, "latest", manifest_v11, "Investment Operations")
     db.commit()
 
 

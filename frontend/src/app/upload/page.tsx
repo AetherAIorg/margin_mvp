@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 
 export default function UploadPage() {
   const [uploading, setUploading] = useState(false);
@@ -26,10 +27,11 @@ export default function UploadPage() {
 
   return (
     <div>
+      <Breadcrumbs items={[{ label: "Push sources" }]} />
       <header className="page-header">
-        <p className="eyebrow">Artifact ingestion</p>
-        <h1>Upload Artifacts</h1>
-        <p className="muted">Excel, SQL, DAX, Python, and CSV metric definitions.</p>
+        <p className="eyebrow">Source ingestion</p>
+        <h1>Push sources</h1>
+        <p className="muted">Upload Excel, SQL, DAX, Python, and CSV artifacts for discovery and indexing.</p>
       </header>
 
       <div
@@ -56,16 +58,25 @@ export default function UploadPage() {
 
       {result && (
         <div className="panel" style={{ marginTop: "1rem" }}>
-          <h2>Uploaded</h2>
-          <div className="list">
-            {result.artifacts?.map((a: any) => (
-              <div className="card" key={a.id}>
-                <span className="pill">{a.artifact_type}</span>
-                <h3>{a.filename}</h3>
-                <p className="muted">Status: {a.status} · Job queued</p>
-              </div>
-            ))}
-          </div>
+          <h2 style={{ marginTop: 0 }}>Uploaded</h2>
+          <table className="registry-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Type</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.artifacts?.map((a: any) => (
+                <tr key={a.id}>
+                  <td>{a.filename}</td>
+                  <td><span className="pill">{a.artifact_type}</span></td>
+                  <td className="muted">{a.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

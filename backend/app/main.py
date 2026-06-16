@@ -22,10 +22,21 @@ from app.models import (
     Issue,
     Metric,
     MetricCluster,
+    MetricManifest,
     MetricRun,
     MetricSpec,
+    MetricTag,
     NormalizedFormula,
     ParseJob,
+)
+from app.registry import (
+    ManifestSpecProxy,
+    build_manifest_from_metric,
+    build_manifest_from_payload,
+    get_or_create_manifest,
+    publish_tag,
+    resolve_tag,
+    tag_summary,
 )
 from app.parsers.csv_parser import sniff_csv_columns
 from app.parsers import artifact_type_from_filename
@@ -48,7 +59,10 @@ from app.schemas import (
     MetricRunIn,
     MetricRunOut,
     MetricSpecOut,
+    MetricTagDetailOut,
+    MetricTagOut,
     ParseJobOut,
+    PublishTagIn,
     SearchResponse,
     SearchResult,
 )
@@ -385,7 +399,7 @@ def list_metrics(db: Session = Depends(get_db)):
     metrics = list(
         db.scalars(select(Metric).options(selectinload(Metric.specs)).order_by(Metric.canonical_name))
     )
-    return [_metric_out(m) for m in metrics]
+    return [_metric_out(m, db) for m in metrics]
 
 
 @app.post("/api/metrics", response_model=MetricOut)
@@ -413,7 +427,7 @@ def create_metric(payload: MetricIn, db: Session = Depends(get_db)):
         )
     db.commit()
     db.refresh(metric)
-    return _metric_out(metric)
+    return _metric_out(metric, db)
 
 
 @app.get("/api/metrics/{metric_id}", response_model=MetricOut)
@@ -421,10 +435,11 @@ def get_metric(metric_id: str, db: Session = Depends(get_db)):
     metric = db.scalar(select(Metric).where(Metric.id == metric_id).options(selectinload(Metric.specs)))
     if not metric:
         raise HTTPException(status_code=404, detail="Metric not found")
-    return _metric_out(metric)
+    return _metric_out(metric, db)
 
 
-def _metric_out(metric: Metric) -> MetricOut:
+def _metric_out(metric: Metric, db: Session | None = None) -> MetricOut:
+    summary = tag_summary(db, metric.id) if db else {"tag_count": 0, "latest_tag": None, "latest_digest": None}
     return MetricOut(
         id=metric.id,
         canonical_name=metric.canonical_name,
@@ -435,6 +450,10 @@ def _metric_out(metric: Metric) -> MetricOut:
         owner=metric.owner,
         status=metric.status,
         version=metric.version,
+        tag_count=summary["tag_count"],
+        latest_tag=summary["latest_tag"],
+        latest_digest=summary["latest_digest"],
+        updated_at=metric.updated_at,
         specs=[
             MetricSpecOut(
                 id=s.id,
@@ -450,6 +469,97 @@ def _metric_out(metric: Metric) -> MetricOut:
     )
 
 
+def _tag_out(tag: MetricTag) -> MetricTagOut:
+    return MetricTagOut(
+        id=tag.id,
+        tag=tag.tag,
+        digest=tag.digest,
+        digest_short=tag.digest.replace("sha256:", "")[:12],
+        published_by=tag.published_by,
+        published_at=tag.published_at,
+        status=tag.status,
+    )
+
+
+@app.get("/api/metrics/{metric_id}/tags", response_model=list[MetricTagOut])
+def list_metric_tags(metric_id: str, db: Session = Depends(get_db)):
+    metric = db.get(Metric, metric_id)
+    if not metric:
+        raise HTTPException(status_code=404, detail="Metric not found")
+    tags = list(
+        db.scalars(
+            select(MetricTag)
+            .where(MetricTag.metric_id == metric_id)
+            .order_by(MetricTag.published_at.desc())
+        )
+    )
+    return [_tag_out(t) for t in tags]
+
+
+@app.get("/api/metrics/{metric_id}/tags/{tag}", response_model=MetricTagDetailOut)
+def get_metric_tag(metric_id: str, tag: str, db: Session = Depends(get_db)):
+    row = db.scalar(
+        select(MetricTag).where(MetricTag.metric_id == metric_id, MetricTag.tag == tag)
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    manifest = db.get(MetricManifest, row.digest)
+    if not manifest:
+        raise HTTPException(status_code=404, detail="Manifest not found")
+    base = _tag_out(row)
+    return MetricTagDetailOut(**base.model_dump(), manifest=manifest.manifest)
+
+
+@app.post("/api/metrics/{metric_id}/tags", response_model=MetricTagOut)
+def publish_metric_tag(metric_id: str, payload: PublishTagIn, db: Session = Depends(get_db)):
+    metric = db.scalar(select(Metric).where(Metric.id == metric_id).options(selectinload(Metric.specs)))
+    if not metric:
+        raise HTTPException(status_code=404, detail="Metric not found")
+    if payload.spec:
+        manifest = build_manifest_from_payload(
+            metric,
+            {
+                "required_inputs": payload.spec.required_inputs,
+                "transformation_plan": payload.spec.transformation_plan,
+                "calculation_function_id": payload.spec.calculation_function_id,
+                "validation_rules": payload.spec.validation_rules,
+            },
+        )
+    elif metric.specs:
+        manifest = build_manifest_from_metric(metric, metric.specs[0])
+    else:
+        raise HTTPException(status_code=400, detail="Metric has no spec to publish")
+    try:
+        tag_row = publish_tag(db, metric, payload.tag, manifest, payload.published_by)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    events.emit(
+        events.METRIC_TAG_PUBLISHED,
+        {
+            "metric_id": metric.id,
+            "canonical_name": metric.canonical_name,
+            "tag": tag_row.tag,
+            "digest": tag_row.digest,
+        },
+        event_id=events.make_event_id(events.METRIC_TAG_PUBLISHED, metric.id, tag_row.tag),
+    )
+    return _tag_out(tag_row)
+
+
+@app.post("/api/metrics/{metric_id}/tags/{tag}/deprecate", response_model=MetricTagOut)
+def deprecate_metric_tag(metric_id: str, tag: str, db: Session = Depends(get_db)):
+    row = db.scalar(
+        select(MetricTag).where(MetricTag.metric_id == metric_id, MetricTag.tag == tag)
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    row.status = "deprecated"
+    db.commit()
+    db.refresh(row)
+    return _tag_out(row)
+
+
 @app.post("/api/metrics/{metric_id}/approve", response_model=MetricOut)
 def approve_metric(metric_id: str, payload: ApproveMetricIn, db: Session = Depends(get_db)):
     metric = db.scalar(select(Metric).where(Metric.id == metric_id).options(selectinload(Metric.specs)))
@@ -462,6 +572,17 @@ def approve_metric(metric_id: str, payload: ApproveMetricIn, db: Session = Depen
     if spec:
         spec.approved_by = payload.approved_by
         spec.approved_at = datetime.now(timezone.utc)
+        manifest = build_manifest_from_metric(metric, spec)
+        try:
+            publish_tag(db, metric, "latest", manifest, payload.approved_by)
+        except ValueError:
+            latest = db.scalar(
+                select(MetricTag).where(MetricTag.metric_id == metric.id, MetricTag.tag == "latest")
+            )
+            if latest:
+                latest.digest = get_or_create_manifest(db, metric.id, manifest).digest
+                latest.published_at = datetime.now(timezone.utc)
+                latest.status = "published"
     db.commit()
     db.refresh(metric)
     events.emit(
@@ -472,7 +593,7 @@ def approve_metric(metric_id: str, payload: ApproveMetricIn, db: Session = Depen
             "approved_by": payload.approved_by,
         },
     )
-    return _metric_out(metric)
+    return _metric_out(metric, db)
 
 
 @app.get("/api/functions", response_model=list[FunctionOut])
@@ -545,12 +666,15 @@ def search(q: str = "", db: Session = Depends(get_db)):
     for m in metrics:
         hay = f"{m.canonical_name} {m.description} {m.owner}".lower()
         if not terms or terms in hay:
+            summary = tag_summary(db, m.id)
+            tag_hint = summary["latest_tag"] or m.version
+            digest_hint = (summary["latest_digest"] or "").replace("sha256:", "")[:12]
             results.append(
                 SearchResult(
                     id=m.id,
                     type="metric",
                     title=m.canonical_name,
-                    subtitle=f"{m.domain} · {m.status} · owner {m.owner or 'none'}",
+                    subtitle=f"{m.domain} · {m.status} · tag {tag_hint} · {digest_hint}",
                     snippet=m.description[:200],
                     score=3.0 if terms and terms in m.canonical_name.lower() else 1.0,
                     href=f"/metrics/{m.id}",
@@ -678,33 +802,58 @@ def run_metric(metric_id: str, payload: MetricRunIn, db: Session = Depends(get_d
     )
     if not metric:
         raise HTTPException(status_code=404, detail="Metric not found")
-    if not metric.specs:
-        raise HTTPException(status_code=400, detail="Metric has no spec")
     dataset = db.get(Dataset, payload.dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     nav_dataset = db.get(Dataset, payload.nav_dataset_id) if payload.nav_dataset_id else None
 
-    spec = metric.specs[0]
-    for s in metric.specs:
-        if s.approved_at:
-            spec = s
-            break
+    tag_row = resolve_tag(db, metric.id, payload.tag)
+    manifest_data: dict | None = None
+    spec = metric.specs[0] if metric.specs else None
+    run_tag = payload.tag
+    run_digest: str | None = None
+
+    if tag_row:
+        manifest = db.get(MetricManifest, tag_row.digest)
+        if manifest:
+            manifest_data = manifest.manifest
+            run_tag = tag_row.tag
+            run_digest = tag_row.digest
+            fn = None
+            fn_id = manifest_data.get("calculation_function_id")
+            if fn_id:
+                fn = db.get(Function, fn_id)
+            spec = ManifestSpecProxy(manifest_data, calculation_function=fn)
+    elif not metric.specs:
+        raise HTTPException(status_code=400, detail="Metric has no spec or tag")
+    else:
+        for s in metric.specs:
+            if s.approved_at:
+                spec = s
+                break
 
     run = MetricRun(metric_id=metric.id, dataset_id=dataset.id, status="running")
     db.add(run)
     db.commit()
 
-    spec_with_fn = db.scalar(
-        select(MetricSpec)
-        .where(MetricSpec.id == spec.id)
-        .options(selectinload(MetricSpec.calculation_function))
-    )
-    result = execute_metric_run(metric, spec_with_fn, dataset, nav_dataset, payload.column_mapping)
+    if isinstance(spec, ManifestSpecProxy):
+        result = execute_metric_run(metric, spec, dataset, nav_dataset, payload.column_mapping)
+    else:
+        spec_with_fn = db.scalar(
+            select(MetricSpec)
+            .where(MetricSpec.id == spec.id)
+            .options(selectinload(MetricSpec.calculation_function))
+        )
+        result = execute_metric_run(metric, spec_with_fn, dataset, nav_dataset, payload.column_mapping)
 
     run.status = result["status"]
     run.transformation_plan_used = spec.transformation_plan
-    run.audit_log = result.get("audit_log")
+    audit = result.get("audit_log") or {}
+    if run_tag:
+        audit["tag"] = run_tag
+    if run_digest:
+        audit["digest"] = run_digest
+    run.audit_log = audit
     run.warnings = result.get("warnings")
     run.errors = result.get("errors")
     run.result_path = result.get("result_path")

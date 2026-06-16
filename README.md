@@ -170,9 +170,10 @@ Open http://localhost:3000
 2. **Discovery dashboard** — see metric candidates, IRR clusters, issue counts
 3. **Open IRR cluster** — click "Fund Net IRR" or similar to see 4 implementations side-by-side
 4. **Issue dashboard** — review conflicting time basis, deprecated references, missing owners
-5. **Metric registry** — open "Fund-Level Net IRR", review approved execution plan
-6. **Apply metric** — upload `fund_cashflows.csv` and `fund_nav.csv`, select Fund-Level Net IRR, run
-7. **Audit trail** — review computed IRR per fund, warnings, transformation plan used
+5. **Metric registry** — open "Fund-Level Net IRR", review tags (`1.0`, `1.1`, `latest`) and manifest digests
+6. **Publish tag** — publish a new tag (e.g. `1.2`) from the repository Tags tab
+7. **Pull & run** — select repository + tag on Pull & run, upload `fund_cashflows.csv` and `fund_nav.csv`, execute
+8. **Audit trail** — review computed IRR per fund; audit log includes `tag` and `digest`
 
 Expected demo output:
 ```
@@ -181,6 +182,12 @@ IRR cluster: multiple implementations with conflicts detected.
 Issues: conflicting time basis, deprecated formulas, missing owners.
 Apply: Fund A/B/C net IRR with audit trail.
 ```
+
+---
+
+### Margin Catalog (governance layer)
+
+Optional sibling project `registry_governance/` adds teams, stewardship, documentation, certification, and lineage on top of this registry. See that project's README for dual-stack setup. Set `NEXT_PUBLIC_CATALOG_URL=http://localhost:3001` on the frontend and `GOVERNANCE_WEBHOOK_URL=http://localhost:8090/webhooks/metricgraph` on the API to connect.
 
 ---
 
@@ -194,11 +201,15 @@ Apply: Fund A/B/C net IRR with audit trail.
 | GET | `/api/clusters` | Formula clusters |
 | GET | `/api/issues` | Governance issues |
 | GET | `/api/search?q=` | Universal search |
-| GET/POST | `/api/metrics` | Metric registry |
-| POST | `/api/metrics/{id}/approve` | Approve canonical spec |
+| GET/POST | `/api/metrics` | Metric repositories |
+| GET | `/api/metrics/{id}/tags` | List tags for a repository |
+| GET | `/api/metrics/{id}/tags/{tag}` | Manifest for a tag |
+| POST | `/api/metrics/{id}/tags` | Publish tag (immutable manifest) |
+| POST | `/api/metrics/{id}/tags/{tag}/deprecate` | Deprecate tag |
+| POST | `/api/metrics/{id}/approve` | Approve canonical spec (+ update `latest`) |
 | GET | `/api/functions` | Function/transformation registry |
 | POST | `/api/datasets/upload` | Upload raw CSV data |
-| POST | `/api/metrics/{id}/run` | Execute approved metric |
+| POST | `/api/metrics/{id}/run?tag=` | Execute manifest by tag (falls back to `latest`) |
 | GET | `/api/runs/{id}/results` | Results + audit trail |
 | GET | `/api/formulas/diff` | Formula diff with business impact |
 

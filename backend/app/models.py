@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -108,6 +108,36 @@ class Metric(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
     specs: Mapped[list["MetricSpec"]] = relationship(back_populates="metric", cascade="all, delete-orphan")
+    tags: Mapped[list["MetricTag"]] = relationship(back_populates="metric", cascade="all, delete-orphan")
+    manifests: Mapped[list["MetricManifest"]] = relationship(back_populates="metric", cascade="all, delete-orphan")
+
+
+class MetricManifest(Base):
+    __tablename__ = "metric_manifests"
+
+    digest: Mapped[str] = mapped_column(String(80), primary_key=True)
+    metric_id: Mapped[str] = mapped_column(ForeignKey("metrics.id"), index=True)
+    manifest: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    metric: Mapped[Metric] = relationship(back_populates="manifests")
+    tags: Mapped[list["MetricTag"]] = relationship(back_populates="manifest")
+
+
+class MetricTag(Base):
+    __tablename__ = "metric_tags"
+    __table_args__ = (UniqueConstraint("metric_id", "tag", name="uq_metric_tag"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=new_id)
+    metric_id: Mapped[str] = mapped_column(ForeignKey("metrics.id"), index=True)
+    tag: Mapped[str] = mapped_column(String(80), nullable=False)
+    digest: Mapped[str] = mapped_column(ForeignKey("metric_manifests.digest"), index=True)
+    published_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    status: Mapped[str] = mapped_column(String(40), default="published")
+
+    metric: Mapped[Metric] = relationship(back_populates="tags")
+    manifest: Mapped[MetricManifest] = relationship(back_populates="tags")
 
 
 class MetricSpec(Base):

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 
 const ISSUE_LABELS: Record<string, string> = {
   CONFLICTING_DEFINITION: "Conflicting definitions",
@@ -30,31 +31,44 @@ export default function IssuesPage() {
 
   return (
     <div>
+      <Breadcrumbs items={[{ label: "Governance", href: "/issues" }, { label: "Issues" }]} />
       <header className="page-header">
         <p className="eyebrow">Governance</p>
-        <h1>Issue Dashboard</h1>
-        <p className="muted">{issues.length} issues detected across indexed artifacts.</p>
+        <h1>Issues</h1>
+        <p className="muted">{issues.length} issues detected across indexed sources.</p>
       </header>
 
       {Object.entries(grouped).map(([type, items]) => (
         <div className="panel" key={type} style={{ marginBottom: "1rem" }}>
-          <h2>{ISSUE_LABELS[type] || type} ({items.length})</h2>
-          <div className="list">
-            {items.map((issue) => (
-              <div className="card" key={issue.id}>
-                <span className={`pill ${issue.severity === "high" ? "pill-danger" : "pill-warning"}`}>{issue.severity}</span>
-                <h3>{issue.title}</h3>
-                <p>{issue.explanation}</p>
-                {issue.affected_artifacts?.length > 0 && (
-                  <p className="muted">Affected: {issue.affected_artifacts.join(", ")}</p>
-                )}
-              </div>
-            ))}
-          </div>
+          <h2 style={{ marginTop: 0 }}>{ISSUE_LABELS[type] || type} ({items.length})</h2>
+          <table className="registry-table">
+            <thead>
+              <tr>
+                <th>Severity</th>
+                <th>Title</th>
+                <th>Explanation</th>
+                <th>Affected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((issue) => (
+                <tr key={issue.id}>
+                  <td>
+                    <span className={`pill ${issue.severity === "high" ? "pill-danger" : "pill-warning"}`}>
+                      {issue.severity}
+                    </span>
+                  </td>
+                  <td>{issue.title}</td>
+                  <td className="muted">{issue.explanation}</td>
+                  <td className="muted">{issue.affected_artifacts?.join(", ") ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ))}
 
-      {!issues.length && <p className="muted">No issues yet. Upload artifacts to begin discovery.</p>}
+      {!issues.length && <p className="muted">No issues yet. Push sources to begin discovery.</p>}
     </div>
   );
 }
