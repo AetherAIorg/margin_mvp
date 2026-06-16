@@ -181,6 +181,16 @@ def get_artifact(artifact_id: str, db: Session = Depends(get_db)):
     )
 
 
+@app.delete("/api/artifacts/{artifact_id}")
+def delete_artifact(artifact_id: str, db: Session = Depends(get_db)):
+    artifact = db.get(Artifact, artifact_id)
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    db.delete(artifact)
+    db.commit()
+    return {"status": "deleted"}
+
+
 @app.get("/api/jobs/{job_id}", response_model=ParseJobOut)
 def get_job(job_id: str, db: Session = Depends(get_db)):
     job = db.get(ParseJob, job_id)
