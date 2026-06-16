@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
+from app import events
 from app.config import settings
 from app.database import SessionLocal, get_db, init_db
 from app.discovery.engine import build_discovery
@@ -463,6 +464,14 @@ def approve_metric(metric_id: str, payload: ApproveMetricIn, db: Session = Depen
         spec.approved_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(metric)
+    events.emit(
+        events.METRIC_APPROVED,
+        {
+            "metric_id": metric.id,
+            "canonical_name": metric.canonical_name,
+            "approved_by": payload.approved_by,
+        },
+    )
     return _metric_out(metric)
 
 
@@ -702,6 +711,17 @@ def run_metric(metric_id: str, payload: MetricRunIn, db: Session = Depends(get_d
     run.finished_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(run)
+
+    events.emit(
+        events.METRIC_RUN_COMPLETED,
+        {
+            "run_id": run.id,
+            "metric_id": metric.id,
+            "canonical_name": metric.canonical_name,
+            "status": run.status,
+        },
+        event_id=events.make_event_id(events.METRIC_RUN_COMPLETED, run.id),
+    )
 
     return MetricRunOut(
         id=run.id,

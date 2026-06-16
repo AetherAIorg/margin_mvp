@@ -32,5 +32,10 @@ class Settings(BaseSettings):
     api_port: int = 8000
     cors_origins: str = "http://localhost:3000"
 
+    # Outbound integration hub (Slack/Teams/Linear bridge). Leave the URL empty
+    # to disable event emission entirely.
+    integration_webhook_url: str = ""
+    integration_webhook_secret: str = ""
+
 
 settings = Settings()

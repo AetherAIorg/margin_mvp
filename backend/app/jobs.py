@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app import events
 from app.database import SessionLocal
 from app.discovery.engine import build_discovery, candidate_key
 from app.llm.client import embed_text, label_formula
@@ -36,6 +37,7 @@ def run_parse_job(job_id: str, artifact_id: str) -> None:
         content = download_bytes(artifact.storage_path)
         raw_impls = parse_artifact(artifact.filename, content)
 
+        new_candidates: list[dict] = []
         for raw in raw_impls:
             norm = normalize_formula(raw.label, raw.raw_formula, raw.nearby_context)
             llm_label = label_formula(raw.label, raw.raw_formula, artifact.artifact_type, norm.dimensions)
@@ -87,12 +89,30 @@ def run_parse_job(job_id: str, artifact_id: str) -> None:
                         candidate_key=ck,
                     )
                 )
+                new_candidates.append(
+                    {
+                        "proposed_name": llm_label.get("proposed_name", raw.label),
+                        "metric_family": norm.metric_family,
+                        "entity": llm_label.get("entity"),
+                        "grain": llm_label.get("grain"),
+                        "candidate_key": ck,
+                    }
+                )
 
         artifact.status = "parsed"
         artifact.object_count = len(raw_impls)
         job.status = "completed"
         job.finished_at = datetime.now(timezone.utc)
         db.commit()
+
+        for candidate in new_candidates:
+            events.emit(
+                events.METRIC_CANDIDATE_DISCOVERED,
+                candidate,
+                event_id=events.make_event_id(
+                    events.METRIC_CANDIDATE_DISCOVERED, candidate["candidate_key"]
+                ),
+            )
 
         _rebuild_clusters_and_issues(db)
     except Exception as exc:
@@ -103,12 +123,27 @@ def run_parse_job(job_id: str, artifact_id: str) -> None:
             job.error = str(exc)
             job.finished_at = datetime.now(timezone.utc)
             db.commit()
+        events.emit(
+            events.PARSE_FAILED,
+            {"artifact_id": artifact_id, "filename": getattr(artifact, "filename", None), "error": str(exc)},
+        )
         raise
     finally:
         db.close()
 
 
+def _issue_fingerprint(issue_type: str, title: str, affected: list[str] | None) -> str:
+    return events.make_event_id(issue_type, title, ",".join(sorted(affected or [])))
+
+
 def _rebuild_clusters_and_issues(db) -> None:
+    # Snapshot existing issue fingerprints so we can emit only newly-detected
+    # ones (issues are fully wiped and recreated on every parse).
+    previous_fingerprints = {
+        _issue_fingerprint(i.issue_type, i.title, i.affected_artifacts)
+        for i in db.scalars(select(Issue))
+    }
+
     db.query(Issue).delete()
     db.query(MetricClusterMember).delete()
     db.query(MetricCluster).delete()
@@ -149,6 +184,7 @@ def _rebuild_clusters_and_issues(db) -> None:
                 )
             )
 
+    newly_detected = []
     for issue in view.issues:
         cluster_id = cluster_map.get(issue.candidate_key or "").id if issue.candidate_key in cluster_map else None
         db.add(
@@ -161,4 +197,20 @@ def _rebuild_clusters_and_issues(db) -> None:
                 title=issue.title,
             )
         )
+        fingerprint = _issue_fingerprint(issue.issue_type, issue.title, issue.affected_artifacts)
+        if fingerprint not in previous_fingerprints:
+            newly_detected.append((fingerprint, issue))
     db.commit()
+
+    for fingerprint, issue in newly_detected:
+        events.emit(
+            events.ISSUE_DETECTED,
+            {
+                "issue_type": issue.issue_type,
+                "title": issue.title,
+                "severity": issue.severity,
+                "explanation": issue.explanation,
+                "affected_artifacts": issue.affected_artifacts or [],
+            },
+            event_id=events.make_event_id(events.ISSUE_DETECTED, fingerprint),
+        )
