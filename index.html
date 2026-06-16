@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Aether — Metrics Intelligence Platform</title>
+<meta name="description" content="Aether: discover, govern, and answer questions about financial metrics across Excel, SQL, DAX, and Python — with file-ingestion and Slack/Teams/Linear integration." />
+<style>
+  :root {
+    --bg: #0b0f17;
+    --bg-soft: #111725;
+    --card: #131b2b;
+    --card-2: #16203250;
+    --border: #243049;
+    --text: #e7ecf5;
+    --muted: #93a1bd;
+    --accent: #6ea8fe;
+    --accent-2: #9b8cff;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --pink: #f472b6;
+    --radius: 16px;
+    --maxw: 1100px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(1200px 600px at 80% -10%, #1b2440 0%, transparent 60%),
+                radial-gradient(900px 500px at -10% 10%, #1a2138 0%, transparent 55%),
+                var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    padding: 90px 0 60px;
+    text-align: center;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 14px; margin-bottom: 26px; background: var(--card-2);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
+  h1 {
+    font-size: clamp(34px, 6vw, 62px);
+    line-height: 1.05; margin: 0 0 18px; letter-spacing: -0.02em;
+    background: linear-gradient(120deg, #fff 10%, var(--accent) 55%, var(--accent-2) 95%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { font-size: clamp(16px, 2.4vw, 21px); color: var(--muted); max-width: 720px; margin: 0 auto 32px; }
+  .cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 22px; border-radius: 12px; font-weight: 600; font-size: 15px;
+    border: 1px solid var(--border); color: var(--text); background: var(--card);
+    transition: transform .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-2px); border-color: var(--accent); }
+  .btn.primary { background: linear-gradient(120deg, var(--accent), var(--accent-2)); color: #0b0f17; border: none; }
+
+  section { padding: 46px 0; }
+  .section-title { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  h2 { font-size: clamp(24px, 3.5vw, 34px); margin: 0 0 28px; letter-spacing: -0.01em; }
+
+  .grid { display: grid; gap: 20px; }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 880px) { .grid.cols-3 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: linear-gradient(180deg, var(--card), #0f1623);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 26px; position: relative; overflow: hidden;
+    transition: transform .18s ease, border-color .18s ease;
+  }
+  .card:hover { transform: translateY(-4px); border-color: #34507f; }
+  .card .pill { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 5px 10px; border-radius: 999px; display: inline-block; margin-bottom: 14px; }
+  .pill.mg { color: var(--accent); background: #6ea8fe1a; }
+  .pill.ig { color: var(--green); background: #4ade801a; }
+  .pill.ih { color: var(--pink); background: #f472b61a; }
+  .card h3 { margin: 0 0 8px; font-size: 21px; }
+  .card p { color: var(--muted); margin: 0 0 16px; font-size: 15px; }
+  .card ul { margin: 0; padding-left: 18px; color: var(--text); font-size: 14.5px; }
+  .card ul li { margin-bottom: 7px; }
+  .card .stack { margin-top: 16px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 12px; }
+
+  .flow {
+    background: var(--card-2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 28px; overflow-x: auto;
+  }
+  pre.diagram {
+    margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px; color: var(--text); line-height: 1.5; white-space: pre;
+  }
+  .feature-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  @media (max-width: 880px) { .feature-row { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 520px) { .feature-row { grid-template-columns: 1fr; } }
+  .feat { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .feat .k { font-size: 26px; font-weight: 800; background: linear-gradient(120deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .feat .l { font-size: 13.5px; color: var(--muted); }
+
+  .ask { display: grid; grid-template-columns: 1.1fr .9fr; gap: 24px; align-items: center; }
+  @media (max-width: 880px) { .ask { grid-template-columns: 1fr; } }
+  .chat { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .msg { display: flex; gap: 12px; margin-bottom: 14px; }
+  .msg:last-child { margin-bottom: 0; }
+  .av { width: 34px; height: 34px; border-radius: 9px; flex: none; display: grid; place-items: center; font-size: 14px; font-weight: 700; }
+  .av.you { background: #6ea8fe22; color: var(--accent); }
+  .av.bot { background: #f472b622; color: var(--pink); }
+  .bubble { background: #0f1623; border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; font-size: 14px; }
+  .bubble code { background: #1d2740; padding: 1px 6px; border-radius: 5px; color: #cfe0ff; }
+  .bubble .meta { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+
+  footer { padding: 50px 0 70px; text-align: center; color: var(--muted); font-size: 14px; border-top: 1px solid var(--border); margin-top: 30px; }
+  .tags { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 18px 0 0; }
+  .tag { font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="badge"><span class="dot"></span> Pilot platform · 46 automated tests passing</div>
+      <h1>Aether Metrics Intelligence</h1>
+      <p class="sub">A pilot platform that discovers how financial metrics are <em>actually</em> calculated across spreadsheets and code, flags conflicting definitions, keeps a governed registry, and lets your team ask about any metric from Slack, Teams, or Linear.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/AetherAIorg/margin_mvp">View on GitHub</a>
+        <a class="btn" href="#projects">Explore the projects</a>
+      </div>
+      <div class="tags">
+        <span class="tag">FastAPI</span><span class="tag">Postgres + pgvector</span>
+        <span class="tag">Next.js</span><span class="tag">DuckDB</span>
+        <span class="tag">OpenRouter LLM</span><span class="tag">Slack · Teams · Linear</span>
+      </div>
+    </header>
+
+    <section id="projects">
+      <div class="section-title">Three composable services</div>
+      <h2>What's inside</h2>
+      <div class="grid cols-3">
+        <div class="card">
+          <span class="pill mg">MetricGraph</span>
+          <h3>Discover &amp; govern metrics</h3>
+          <p>"Glean for financial metrics." Parses Excel, SQL, DAX, and Python to find every formula, normalizes it, clusters look-alikes, and surfaces conflicts.</p>
+          <ul>
+            <li>Multi-language formula parsing &amp; normalization</li>
+            <li>LLM labeling + semantic clustering</li>
+            <li>Conflict / governance issue detection</li>
+            <li>Approved metric registry with audit trail</li>
+            <li>Apply metrics to raw data (DuckDB, XIRR, ...)</li>
+          </ul>
+          <div class="stack">FastAPI · Postgres/pgvector · Redis/RQ · MinIO · Next.js</div>
+        </div>
+
+        <div class="card">
+          <span class="pill ig">ingest_engine</span>
+          <h3>Watch &amp; sync sources</h3>
+          <p>A polling file-ingestion engine that watches source folders, content-addresses and compresses files, detects changes, and feeds them into MetricGraph.</p>
+          <ul>
+            <li>Recursive watch with include/exclude globs</li>
+            <li>SHA-256 content hashing + zlib store</li>
+            <li>SQLite change-state &amp; event log</li>
+            <li>Pluggable sinks (log / MetricGraph / webhook)</li>
+            <li>Composite fan-out sink for notifications</li>
+          </ul>
+          <div class="stack">Python · httpx · SQLite · CLI (run / scan-once / status)</div>
+        </div>
+
+        <div class="card">
+          <span class="pill ih">integration_hub</span>
+          <h3>Notify &amp; answer in chat</h3>
+          <p>A FastAPI bridge that turns platform events into Slack/Teams alerts, files deduped Linear issues for conflicts, and answers metric questions from chat.</p>
+          <ul>
+            <li>Inbound event webhooks (shared-secret verified)</li>
+            <li>Slack / Teams / Linear connectors</li>
+            <li>Auto Linear issues for conflicts (deduped)</li>
+            <li>Ask in Linear &rarr; reply from the registry</li>
+            <li>Slack slash commands &amp; approve buttons</li>
+          </ul>
+          <div class="stack">FastAPI · httpx · SQLite dedupe · Adaptive Cards · GraphQL</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">End to end</div>
+      <h2>How a metric flows through the platform</h2>
+      <div class="flow">
+<pre class="diagram">
+  Source files                 Discovery & governance              Humans
+  (xlsx/sql/dax/py)            ┌───────────────────────┐
+        │                      │      MetricGraph       │        Slack / Teams
+        ▼   file.added/        │  parse → normalize →   │  alerts   ▲
+  ┌──────────────┐  modified   │  cluster → conflicts → │──────────►│
+  │ ingest_engine│────────────►│  registry → execute    │           │
+  └──────────────┘  composite  └───────────┬───────────┘           │
+        │            sink                   │ events                │
+        │                                   ▼                       │
+        │                         ┌───────────────────┐   Linear issue (deduped)
+        └────────────────────────►│  integration_hub  │──────────► Linear
+                  file events     └─────────┬─────────┘
+                                            │ "metric: gross irr?"
+                                            ▼
+                                   answers from the registry
+</pre>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Ask anywhere</div>
+      <h2>Ask about a metric in Linear — get the registry answer</h2>
+      <div class="ask">
+        <p class="sub" style="text-align:left;margin:0;">
+          Comment on any Linear issue and the hub looks the term up in MetricGraph's
+          governed registry, then replies in-thread with the canonical definition,
+          owner, status, and spec. The same works via Slack slash commands and Teams.
+        </p>
+        <div class="chat">
+          <div class="msg">
+            <div class="av you">You</div>
+            <div class="bubble"><div class="meta">Comment · ENG-142</div><code>metric: gross irr</code></div>
+          </div>
+          <div class="msg">
+            <div class="av bot">MG</div>
+            <div class="bubble">
+              <div class="meta">integration_hub · auto-reply</div>
+              <strong>Gross IRR</strong> · status: <code>approved</code> · owner: Investment Ops<br/>
+              Internal rate of return before fees, fund-level.<br/>
+              <span style="color:var(--muted)">Inputs: cashflows, dates · Transform: <code>xirr</code></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">At a glance</div>
+      <h2>By the numbers</h2>
+      <div class="feature-row">
+        <div class="feat"><div class="k">3</div><div class="l">composable services</div></div>
+        <div class="feat"><div class="k">4</div><div class="l">source languages parsed</div></div>
+        <div class="feat"><div class="k">3</div><div class="l">chat platforms wired</div></div>
+        <div class="feat"><div class="k">46</div><div class="l">automated tests passing</div></div>
+      </div>
+    </section>
+
+    <footer>
+      <div>Aether Metrics Intelligence — pilot platform.</div>
+      <div style="margin-top:8px;">MetricGraph · ingest_engine · integration_hub · <a href="https://github.com/AetherAIorg/margin_mvp">github.com/AetherAIorg/margin_mvp</a></div>
+    </footer>
+  </div>
+</body>
+</html>
