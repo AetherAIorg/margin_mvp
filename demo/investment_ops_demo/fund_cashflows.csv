@@ -1,0 +1,13 @@
+fund_id,cashflow_date,cashflow_amount,cashflow_type
+F001,2020-01-15,-10000000,contribution
+F001,2020-06-30,-5000000,contribution
+F001,2021-03-15,2000000,distribution
+F001,2022-09-30,5000000,distribution
+F001,2023-12-31,3000000,distribution
+F002,2019-03-01,-20000000,contribution
+F002,2020-12-15,8000000,distribution
+F002,2022-06-30,12000000,distribution
+F003,2021-01-01,-15000000,contribution
+F003,2021-06-30,-8000000,contribution
+F003,2023-03-15,10000000,distribution
+F003,2024-06-30,15000000,distribution

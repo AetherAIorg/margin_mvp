@@ -1,0 +1,38 @@
+// PowerBI DAX measures for fund performance
+
+[Net IRR] = XIRR(FundCashflows[Amount], FundCashflows[Date])
+
+[Gross Deal IRR] = 
+CALCULATE(
+    XIRR(DealCashflows[Gross Amount], DealCashflows[Date]),
+    DealCashflows[Status] = "Active"
+)
+
+[Realized IRR] = 
+CALCULATE(
+    XIRR(RealizedCashflows[Amount], RealizedCashflows[Exit Date]),
+    ALL(DealCashflows)
+)
+
+[Fund MOIC] = DIVIDE(
+    SUM(FundCashflows[Distributions]) + [Current NAV],
+    SUM(FundCashflows[Paid In Capital])
+)
+
+[DPI] = DIVIDE(
+    SUM(FundCashflows[Distributions]),
+    SUM(FundCashflows[Paid In Capital])
+)
+
+[TVPI] = DIVIDE(
+    SUM(FundCashflows[Distributions]) + [Current NAV],
+    SUM(FundCashflows[Paid In Capital])
+)
+
+[RVPI] = DIVIDE([Current NAV], SUM(FundCashflows[Paid In Capital]))
+
+[Current NAV] = SUM(NAVTable[NAV Amount])
+
+[Legacy Monthly IRR] = 
+// Deprecated measure - uses old monthly approximation
+AVERAGE(FundCashflows[Monthly IRR Approx])

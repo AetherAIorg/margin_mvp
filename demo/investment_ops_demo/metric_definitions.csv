@@ -1,0 +1,8 @@
+metric_name,formula,owner,description,status
+Fund-Level Net IRR,XIRR(NetCashflows CashflowDates),Investment Operations,Net IRR after fees including terminal NAV,approved
+Gross Deal IRR,XIRR(GrossCashflows CashflowDates),Deal Analytics,Gross IRR at deal level before fees,approved
+Realized IRR,XIRR(RealizedCashflows ExitDates),Portfolio Reporting,IRR on realized exits only,approved
+Fund MOIC,(Distributions + NAV) / PaidInCapital,Investment Operations,Multiple on invested capital,approved
+DPI,Distributions / PaidInCapital,Investment Operations,Distributed to paid-in,approved
+TVPI,(Distributions + NAV) / PaidInCapital,Investment Operations,Total value to paid-in,approved
+Legacy Monthly IRR,monthly_irr(gross_cashflows),,Deprecated monthly approximation,deprecated
