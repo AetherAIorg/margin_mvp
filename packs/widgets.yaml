@@ -1,0 +1,35 @@
+# The widgets pack: a NEUTRAL example that exists only to demonstrate the pack
+# mechanism. It models nothing real. "widget", "gadget", "weight", "count" are
+# deliberately generic placeholders. A downstream domain pack has this exact
+# shape with its own vocabulary.
+name: widgets
+
+# Second labels an Entity may carry, added alongside :Entity. Any write with a
+# subtype label outside this list (for this pack) is rejected by the client.
+entity_subtypes:
+  - Widget
+  - Gadget
+
+# Specialized entity-to-entity edge types this pack permits, beyond the always
+# present RELATED_TO escape hatch.
+edge_types:
+  - CONTAINS
+
+# Canonical metric catalog. metric_key is namespaced under "widgets" (or the
+# reserved "shared"). aliases seed the resolver's tier-1 exact match.
+metrics:
+  - metric_key: shared.record_count
+    unit: count
+    aliases: [count, qty, quantity, n]
+  - metric_key: widgets.weight
+    unit: gram
+    numerator_def: mass of one widget
+    aliases: [weight, wgt, mass]
+  - metric_key: widgets.length
+    unit: millimetre
+    aliases: [length, len, size]
+
+benchmarks:
+  - benchmark_key: widgets.reference_weight
+    attributes:
+      note: neutral placeholder reference point

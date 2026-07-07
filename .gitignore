@@ -1,0 +1,46 @@
+# --- Python ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# --- ML model / embedding caches (sentence-transformers, HF) ---
+.cache/
+models/
+*.safetensors
+*.bin
+
+# --- env / secrets ---
+.env
+.env.*
+!.env.example
+.venv
+
+# --- Node / frontend (if any is re-added later) ---
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-error.log*
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+*.pdf
+
+# --- Domain-specific packs (kept local, not part of the general platform) ---
+# The committed repo is the domain-agnostic foundation only. Concrete domain
+# packs and their connectors live here locally but are intentionally not tracked.
+auto_abs/

@@ -1,254 +1,249 @@
-# MetricGraph
+# margin-kg-mvp
 
-**Glean for financial metrics** — search, govern, and execute trusted financial calculations across Excel, SQL, BI, and code.
+A domain-agnostic knowledge-graph platform. It models the *semantics* of data
+products (what every column, metric, and document actually means) and resolves
+that meaning even when data dictionaries are missing.
 
-MetricGraph indexes every financial function, metric, formula, SQL transformation, DAX measure, and backend calculation across your organization. It discovers conflicting definitions, builds an auditable metric catalog, and lets teams apply approved transformations to raw data.
+This repository is the **foundation only**: two layers plus the bridge between
+them. It contains zero domain logic. Domains are added later as declarative
+*packs*, without touching any code here.
 
-## What the pilot proves
-
-1. **Discover** — find where financial metrics are calculated across messy artifacts
-2. **Detect conflicts** — flag conflicting time basis, fee treatment, deprecated logic, missing owners
-3. **Execute** — apply an approved metric definition to raw CSV data with a full audit trail
-
-## Architecture
+> For the production architecture that grows around this foundation (Celery
+> workers, SharePoint and API connectors, data-lineage integration, Vespa hybrid
+> search, and a worked domain pack), see
+> [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md).
 
 ```
-Frontend (Next.js)
-       ↓
-FastAPI API
-       ↓
-Postgres + pgvector | MinIO/S3 | Redis/RQ Worker
-       ↓
-Parsers → Normalizer → LLM Labeling → Registry → Execution Engine (DuckDB + Python)
+graph/       Layer 1: the fixed core ontology + the graph client
+ingestion/   Layer 2: the generic Source contract + the common IR + infra
+resolver/    the bridge: observed columns -> canonical metrics (3-tier funnel)
+packs/        declarative domain specializations (only the neutral widgets example ships)
+tests/        proofs of every invariant, all offline
 ```
 
-**Parse first, LLM second.** Artifacts are parsed deterministically; the LLM labels formulas, infers dimensions, explains diffs, and generates embeddings.
+## Why two layers
 
----
+The whole design goal is *decoupling*. Downstream teams point ingestion at wildly
+different systems (SharePoint, Postgres, Snowflake, REST APIs) and add different
+business domains. Those two axes of change are isolated:
 
-## External applications you must provision
+- **Adding a source** touches only a new `Source` implementation. Nothing about
+  the graph or the resolver changes.
+- **Adding a domain** touches only a new pack (a YAML file). No code changes.
 
-MetricGraph requires these services. The repo ships a `docker-compose.yml` that runs all of them locally.
+Everything in between speaks one shape: the **IR** (intermediate representation).
+No connector-specific shape ever reaches the graph or the resolver.
 
-### 1. PostgreSQL 16 + pgvector
-
-Stores the metric registry, formula index, clusters, issues, embeddings, and run audit logs.
-
-| Variable | Example |
-|----------|---------|
-| `DATABASE_URL` | `postgresql+psycopg://metricgraph:metricgraph@localhost:5432/metricgraph` |
-
-Docker image: `pgvector/pgvector:pg16`
-
-After first boot, run migrations:
-```bash
-cd backend && alembic upgrade head
-```
-
-### 2. Redis
-
-Job queue for background artifact parsing (RQ worker).
-
-| Variable | Example |
-|----------|---------|
-| `REDIS_URL` | `redis://localhost:6379/0` |
-
-### 3. MinIO or AWS S3
-
-Object storage for uploaded artifacts, datasets, and execution results.
-
-| Variable | Example |
-|----------|---------|
-| `S3_ENDPOINT` | `http://localhost:9000` |
-| `S3_ACCESS_KEY` | `minioadmin` |
-| `S3_SECRET_KEY` | `minioadmin` |
-| `S3_BUCKET` | `metricgraph` |
-| `S3_REGION` | `us-east-1` |
-| `S3_USE_SSL` | `false` |
-
-MinIO console: http://localhost:9001
-
-For AWS S3, set `S3_ENDPOINT` to your bucket URL and provide IAM credentials.
-
-### 4. OpenRouter (LLM)
-
-Used for formula labeling and conflict explanations via OpenRouter's OpenAI-compatible chat API. Get a key at https://openrouter.ai/keys.
-
-| Variable | Example |
-|----------|---------|
-| `OPENROUTER_API_KEY` | `sk-or-...` |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` |
-| `LLM_MODEL` | `openai/gpt-4o-mini` (any OpenRouter model slug) |
-| `OPENROUTER_SITE_URL` | `https://metricgraph.local` (sent as `HTTP-Referer`) |
-| `OPENROUTER_APP_NAME` | `MetricGraph` (sent as `X-Title`) |
-
-Without a key, parsing still works but LLM labeling falls back to deterministic defaults.
-
-### 4b. Embeddings (optional, for semantic search)
-
-OpenRouter does **not** provide an embeddings endpoint. To enable pgvector semantic search, supply a separate OpenAI-compatible embeddings provider. Leave it empty for keyword-only search.
-
-| Variable | Example |
-|----------|---------|
-| `EMBEDDING_API_KEY` | `sk-...` (e.g. OpenAI) |
-| `EMBEDDING_BASE_URL` | *(optional)* custom embeddings endpoint |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` |
-
-### 5. Docker + Docker Compose
-
-Recommended for the pilot. Brings up all services with one command.
-
----
-
-## Quick start (Docker)
+## Quickstart
 
 ```bash
-cd metricgraph
-cp .env.example .env
-# Edit .env and set OPENROUTER_API_KEY
-
-docker compose up --build
+uv venv --python 3.11
+uv pip install -e ".[dev]"
+uv run pytest            # 32 tests, all offline, no network or DB needed
 ```
 
-Services:
-- **Frontend**: http://localhost:3000
-- **API**: http://localhost:8000
-- **API docs**: http://localhost:8000/docs
-- **MinIO console**: http://localhost:9001
-
-### Seed demo data
-
-After services are up, seed the investment-ops demo folder:
+Optional, to exercise the real Neo4j backend locally:
 
 ```bash
-docker compose exec api python -m app.seed.run_seed /demo/investment_ops_demo
+docker compose up -d     # Neo4j at bolt://localhost:7687, browser :7474
 ```
 
-Wait for the worker to finish parsing (check logs: `docker compose logs worker -f`).
+The compose file uses **Neo4j Enterprise** (developer license, accepted for
+local/eval use). This is required because the `Column` identity is a `NODE KEY`
+constraint on `(system, table, name)`, and NODE KEY is an Enterprise feature.
 
----
+The foundation is fully testable with **no network and no database**: the
+in-memory graph store models MERGE-on-key semantics faithfully, so idempotency
+is a real property in the tests, not a mock. `Neo4jGraphStore` is the same
+operations compiled to Cypher and is the only module that emits Cypher.
 
-## Manual local setup
+## Layer 1: the core ontology
 
-### Backend
+Six node types, fixed for every domain forever:
 
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp ../.env.example ../.env
-# Start Postgres, Redis, MinIO separately or via docker compose up postgres redis minio minio-init
+| Node | Identity | Purpose |
+|------|----------|---------|
+| `Entity` | `uid` (unique) | the thing being described (base label; packs add a subtype) |
+| `Metric` | `metric_key` (unique, namespaced) | canonical definition of a measurement |
+| `Column` | `(system, table, name)` (node key) | a physical column observed in a source |
+| `Document` | `uri` (unique) | a qualitative prose artifact |
+| `Benchmark` | `benchmark_key` (unique) | a relational/strategic reference point |
+| `Party` | `uid` (unique) | an actor with a role toward an entity |
 
-alembic upgrade head
-uvicorn app.main:app --reload --port 8000
-```
-
-### Worker (separate terminal)
-
-```bash
-cd backend
-source .venv/bin/activate
-python -m app.worker
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open http://localhost:3000
-
----
-
-## Pilot verification walkthrough
-
-1. **Upload artifacts** — go to Upload, drop files from `demo/investment_ops_demo/` (or run seed command)
-2. **Discovery dashboard** — see metric candidates, IRR clusters, issue counts
-3. **Open IRR cluster** — click "Fund Net IRR" or similar to see 4 implementations side-by-side
-4. **Issue dashboard** — review conflicting time basis, deprecated references, missing owners
-5. **Metric registry** — open "Fund-Level Net IRR", review approved execution plan
-6. **Apply metric** — upload `fund_cashflows.csv` and `fund_nav.csv`, select Fund-Level Net IRR, run
-7. **Audit trail** — review computed IRR per fund, warnings, transformation plan used
-
-Expected demo output:
-```
-Discovered N metric candidates across 6 artifacts.
-IRR cluster: multiple implementations with conflicts detected.
-Issues: conflicting time basis, deprecated formulas, missing owners.
-Apply: Fund A/B/C net IRR with audit trail.
-```
-
----
-
-## API endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/artifacts/upload` | Upload Excel/SQL/DAX/Python/CSV |
-| GET | `/api/discovery/summary` | Discovery dashboard stats |
-| GET | `/api/discovery/candidates` | Metric candidates |
-| GET | `/api/clusters` | Formula clusters |
-| GET | `/api/issues` | Governance issues |
-| GET | `/api/search?q=` | Universal search |
-| GET/POST | `/api/metrics` | Metric registry |
-| POST | `/api/metrics/{id}/approve` | Approve canonical spec |
-| GET | `/api/functions` | Function/transformation registry |
-| POST | `/api/datasets/upload` | Upload raw CSV data |
-| POST | `/api/metrics/{id}/run` | Execute approved metric |
-| GET | `/api/runs/{id}/results` | Results + audit trail |
-| GET | `/api/formulas/diff` | Formula diff with business impact |
-
----
-
-## Project structure
+The invariant "resolver spine" edges, all domain-agnostic, every one carrying
+`{source_ref, as_of, created_by}` provenance:
 
 ```
-metricgraph/
-├── docker-compose.yml      # Postgres, Redis, MinIO, API, Worker, Frontend
-├── .env.example            # All external service credentials
-├── backend/
-│   ├── app/
-│   │   ├── parsers/        # Excel, SQL, DAX, Python, CSV
-│   │   ├── normalizer/     # AST + dimension inference
-│   │   ├── llm/            # OpenRouter labeling + optional embeddings
-│   │   ├── discovery/      # Clustering + conflict detection
-│   │   ├── execution/      # DuckDB + finance functions
-│   │   ├── seed/           # Demo seed command
-│   │   └── main.py         # FastAPI routes
-│   ├── alembic/            # Database migrations
-│   └── tests/
-├── frontend/               # Next.js App Router UI
-└── demo/investment_ops_demo/  # Pilot demo artifacts
+(Column)   -[:MEASURES]->            (Metric)
+(Metric)   -[:APPLIES_TO]->          (Entity)
+(Metric)   -[:DEFINED_IN]->          (Document)
+(Metric)   -[:BENCHMARKED_AGAINST]-> (Benchmark)
+(Metric)   -[:COMPUTED_FROM]->       (Metric)
+(Document) -[:DESCRIBES]->           (Entity)
+(Party)    -[:HAS_ROLE {role}]->     (Entity)
+(Entity)   -[:RELATED_TO {role}]->   (Entity)   # generic structural escape hatch
 ```
 
----
+**Multi-label pattern.** Every asset node is `:Entity` plus an *optional* pack
+subtype label (e.g. `:Entity:Widget`). Generic queries match `:Entity` and run
+identically across every domain. The subtype label is written only if a loaded
+pack allow-listed it; unknown labels are rejected at write time, not silently
+persisted.
 
-## Tests
+All writes go through `MERGE` on the identity key, so re-ingestion converges
+rather than duplicating. The only API is `GraphClient`; calling code never
+writes Cypher.
 
-```bash
-cd backend
-pip install -r requirements.txt
-pytest
+```python
+from graph import GraphClient, InMemoryGraphStore   # or Neo4jGraphStore(...)
+
+client = GraphClient(InMemoryGraphStore())
+client.init_schema()                                 # creates identity constraints
+client.upsert_metric("shared.record_count", unit="count")
+client.upsert_entity("acme.parts", subtype_label="Widget")   # needs the widgets pack loaded
 ```
 
----
+## Layer 2: the ingestion contract
 
-## Out of scope (pilot)
+Every connector implements one protocol:
 
-- Live warehouse connectors (Snowflake, BigQuery)
-- Enterprise SSO / permissions
-- Real-time sync
-- Automatic formula correction
-- Full multi-tenant SaaS
+```python
+class Source(Protocol):
+    connector_version: str
+    def discover(self) -> Iterable[WorkItem]: ...   # enumerate work; cheap; idempotent
+    def fetch(self, item: WorkItem) -> RawArtifact: ...  # pull one item; rate-limited
+    def parse(self, artifact: RawArtifact) -> ParsedBundle: ...  # normalize into the IR
+```
 
----
+The three seams do exactly one thing each: **discover** is cheap and drives
+crash-resume (stable `item_id`); **fetch** is the single rate-limited I/O choke
+point; **parse** is pure and unit-testable with no network.
 
-## Positioning
+The IR every connector produces:
 
-> We help investment teams find every version of a financial metric, identify which one is correct, and safely apply the approved calculation to raw data.
+- **observed columns** `(system, table, name, dtype, sample_values, has_dictionary)`
+- **observed documents** `(uri, title, text, as_of)`
+- **observed entities** `(uid, candidate_labels, attributes, columns)`
+- **observed relations** generic `(subject_uid, role, object_uid)` triples
+- **provenance** `(source_ref, fetched_at, connector_version)`
 
-MetricGraph sits on top of messy finance workflows — Excel models, SQL pipelines, BI dashboards, internal apps — and gives visibility without replacing existing systems.
+An observed entity may carry **its own columns** (`ObservedEntity.columns`). Use
+this when the entity *is* a measured dataset with its own feed, as opposed to
+being described by columns living elsewhere. `ParsedBundle.iter_columns()` yields
+free-standing and entity-owned columns together so downstream never misses them.
+
+Cross-cutting infrastructure, all generic:
+
+- **Rate limiter** (`TokenBucket` behind the `RateLimiter` protocol): one choke
+  point every `fetch` routes through, configurable per source, pluggable for a
+  distributed limiter later.
+- **Checkpointer** (`InMemoryCheckpointer` behind the `Checkpointer` protocol):
+  idempotent discovery keyed on `(source_ref, item_id)` so crash/resume never
+  double-ingests.
+- **Parser router** (`ParserRouter`): a source emitting multiple artifact kinds
+  (rows vs prose) dispatches each to a registered parser by type, and every
+  parsed record is stamped with `schema_version`.
+
+## The resolver: mapping columns to metrics
+
+Dictionaries are missing by assumption, so an observed column's meaning is
+resolved through a three-tier funnel:
+
+1. **Tier 1 auto-link** exact match against known pack rules (metric aliases).
+2. **Tier 2 suggest** string-similarity candidate + top-k alternatives, above a
+   confidence threshold, for a human to confirm.
+3. **Tier 3 escalate** queue for a human to define a new metric.
+
+When a human confirms a tier-2/3 mapping, `Resolver.confirm` links the column
+**and writes the mapping back** as a new metric alias in the graph. So the next
+same-named column resolves at tier 1, and tier-2 volume decays over time.
+
+The similarity suggester is swappable: `StringSimilaritySuggester` ships;
+`EmbeddingSuggester` is a stubbed strategy behind the same interface, ready for
+an embedding-based nearest-metric backend with no change to the funnel.
+
+## Extension path 1: add a new source
+
+Implement `Source` and register it. Worked example, the whole pipeline over a
+fixture with no network (see `ingestion/connectors/synthetic.py`):
+
+```python
+from graph import GraphClient, InMemoryGraphStore
+from ingestion import TokenBucket, InMemoryCheckpointer, run_ingest
+from ingestion.connectors.synthetic import SyntheticSource, widgets_fixture
+from packs import WIDGETS_PACK_PATH, load_pack_file
+from resolver import Resolver
+
+client = GraphClient(InMemoryGraphStore()); client.init_schema()
+load_pack_file(client, WIDGETS_PACK_PATH)
+resolver = Resolver(client)
+
+source = SyntheticSource(widgets_fixture(), TokenBucket(rate=100))
+report = run_ingest(source, client, resolver, InMemoryCheckpointer())
+# report.by_tier(Tier.SUGGESTED) -> columns awaiting human confirmation
+```
+
+To write your own connector:
+
+1. Build your fetch client (REST, DB cursor, file walker). Route every network
+   call through the injected `RateLimiter`.
+2. `discover()` yields `WorkItem`s with a **stable** `item_id` and an
+   `artifact_type` hint.
+3. `fetch(item)` pulls bytes/rows and returns a `RawArtifact`.
+4. Register one parser per `artifact_type` on a `ParserRouter`; each parser
+   normalizes into the IR. `parse()` just delegates to the router.
+
+That is the entire contract. The graph, resolver, and packs are untouched.
+
+## Extension path 2: add a new domain pack
+
+A pack is a YAML document declaring an allow-list of entity subtype labels, an
+allow-list of specialized edge types, a namespaced metric catalog, and
+benchmarks. `load_pack` registers the allow-lists (for write-time validation)
+and MERGEs the catalog. See `packs/widgets.yaml` for the neutral example.
+
+```yaml
+name: mypack
+entity_subtypes: [Thing]
+edge_types: [CONTAINS]
+metrics:
+  - metric_key: mypack.some_measure     # namespaced under the pack (or "shared")
+    unit: unit_a
+    aliases: [some_measure, sm]         # seeds the resolver's tier-1 exact match
+benchmarks:
+  - benchmark_key: mypack.reference_point
+```
+
+```python
+from packs import load_pack_file
+load_pack_file(client, "packs/mypack.yaml")
+```
+
+Loading is idempotent. `metric_key` must live in the pack's namespace or the
+reserved `shared` namespace. `aliases` are the seed for tier-1 resolution and
+grow automatically via resolver write-back.
+
+## Deliberate extension points (not built here)
+
+These are seams left clean on purpose, per the "add an extension point, not the
+feature" rule:
+
+- **Embedding suggester** for tier-2, behind `Suggester` (`EmbeddingSuggester`
+  stub).
+- **Durable checkpointer / distributed rate limiter**, behind `Checkpointer` /
+  `RateLimiter`.
+- **Real connectors** (SharePoint, Postgres, Snowflake, REST). Only the neutral
+  synthetic reference connector ships.
+
+The IR expresses document-to-entity (`ObservedDocument.describes`) and
+metric-to-document (`.defines`) links, pack-specialized edge types
+(`ObservedRelation.rel_type`), and arbitrary pack metric attributes, and the
+resolver has a tier-0 `DOCUMENTED` outcome for sources that ship a dictionary.
+These closed the seams a first downstream domain pack surfaced.
+
+## Constraints this foundation holds to
+
+Python 3.11+, type-hinted throughout, `uv` for env/deps, no em dashes, and
+**domain-agnostic core**: no industry vocabulary anywhere in `graph/`,
+`ingestion/`, or `resolver/`. The only example vocabulary is the neutral
+`widgets` pack, which exists solely to demonstrate the mechanism.

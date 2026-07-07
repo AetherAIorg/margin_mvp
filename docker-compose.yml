@@ -1,112 +1,35 @@
+# Local Neo4j for the knowledge graph. The foundation itself runs and is fully
+# tested WITHOUT this (the in-memory graph store backs the tests); this is only
+# for exercising the real Neo4jGraphStore locally.
+#
+#   docker compose up -d
+#   Browser: http://localhost:7474  (user: neo4j, password: password)
+#   Bolt:    bolt://localhost:7687
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_USER: metricgraph
-      POSTGRES_PASSWORD: metricgraph
-      POSTGRES_DB: metricgraph
+  neo4j:
+    # Enterprise edition: the core schema requires a NODE KEY constraint on
+    # (Column.system, Column.table, Column.name), and NODE KEY is an Enterprise
+    # feature. The developer license covers local/eval use, which is why the
+    # license agreement is accepted below.
+    image: neo4j:5.22-enterprise
+    container_name: mkg-neo4j
     ports:
-      - "5432:5432"
+      - "7474:7474"   # HTTP browser
+      - "7687:7687"   # Bolt driver
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      NEO4J_server_memory_pagecache_size: 512M
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mkg_neo4j_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U metricgraph"]
-      interval: 5s
+      # Query the default database so "healthy" means it is actually allocated
+      # and serving, not merely that the process is up.
+      test: ["CMD", "cypher-shell", "-d", "neo4j", "-u", "neo4j", "-p", "password", "RETURN 1"]
+      interval: 10s
       timeout: 5s
       retries: 10
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - miniodata:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 minioadmin minioadmin &&
-      mc mb --ignore-existing local/metricgraph
-      "
-
-  api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql+psycopg://metricgraph:metricgraph@postgres:5432/metricgraph
-      REDIS_URL: redis://redis:6379/0
-      S3_ENDPOINT: http://minio:9000
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
-    volumes:
-      - ./backend:/app
-      - ./demo:/demo
-
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: python -m app.worker
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql+psycopg://metricgraph:metricgraph@postgres:5432/metricgraph
-      REDIS_URL: redis://redis:6379/0
-      S3_ENDPOINT: http://minio:9000
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
-    volumes:
-      - ./backend:/app
-      - ./demo:/demo
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api
+      start_period: 40s
 
 volumes:
-  pgdata:
-  miniodata:
+  mkg_neo4j_data:
